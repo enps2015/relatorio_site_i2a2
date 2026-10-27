@@ -85,6 +85,10 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     // --- Funcionalidades de IA ---
+    // Este projeto é publicado como site estático. Nunca coloque uma chave de API
+    // do Gemini neste arquivo: qualquer visitante pode ler o JavaScript servido.
+    // A IA só pode ser reativada com um endpoint de backend sem credenciais no browser,
+    // definido por window.REPORT_AI_ENDPOINT durante a publicação.
     async function generateAIContent(containerId, title, prompt, buttonText) {
         const container = document.getElementById(containerId);
         container.innerHTML = `
@@ -92,91 +96,51 @@ document.addEventListener('DOMContentLoaded', function () {
             <button id="btn-${containerId}" class="bg-gradient-to-r from-cyan-500 to-blue-500 text-white font-bold py-2 px-4 rounded-lg hover:from-cyan-600 hover:to-blue-600 transition-all duration-300 flex items-center justify-center shadow-lg">
                 ✨ <span class="ml-2">${buttonText}</span>
             </button>
-            <div id="output-${containerId}" class="mt-4"></div>
+            <div id="output-${containerId}" class="mt-4" aria-live="polite"></div>
         `;
 
         const button = document.getElementById(`btn-${containerId}`);
         const outputDiv = document.getElementById(`output-${containerId}`);
-        
+
         button.addEventListener('click', async () => {
+            const endpoint = window.REPORT_AI_ENDPOINT;
+            if (typeof endpoint !== 'string' || !endpoint.trim()) {
+                outputDiv.textContent =
+                    'Integração com IA temporariamente desativada. Este site é estático e precisa de um backend seguro para chamar o Gemini; nenhuma chave de API deve ser enviada ao navegador.';
+                return;
+            }
+
             button.disabled = true;
-            button.innerHTML = `
-                <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                <span class="ml-2">Gerando...</span>
-            `;
-            outputDiv.innerHTML = '';
-            
+            button.textContent = 'Gerando…';
+            outputDiv.textContent = '';
+
             try {
-                const payload = { contents: [{ role: "user", parts: [{ text: prompt }] }] };
-                
-                // !!! IMPORTANTE: A CHAVE DA API FOI REMOVIDA DESTE CÓDIGO !!!
-                // Para que a funcionalidade de IA funcione, você precisa:
-                // 1. Obter uma chave de API do Google AI Studio (ou similar).
-                // 2. INSERIR SUA CHAVE ABAIXO na constante 'apiKey'.
-                // 3. RECOMENDAÇÃO DE SEGURANÇA: Idealmente, esta chave NÃO deve ficar no código do frontend.
-                //    Considere usar um backend simples para fazer a chamada à API do Google,
-                //    mantendo sua chave segura no servidor.
-                const apiKey = "AIzaSyD-56lH0FGHUgYZw11hRfp9MDSxskUZ-Uo"; // <--- SUA CHAVE DE API ATUAL
-                
-                if (apiKey === "SUA_API_KEY_AQUI" || apiKey.length < 30) { // <--- CORRIGIDO AQUI
-                    throw new Error("A chave da API do Google AI não foi configurada corretamente ou é inválida. Por favor, verifique a constante \'apiKey\' no arquivo js/main.js.");
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt })
+                });
+                if (!response.ok) {
+                    throw new Error('O serviço de IA não está disponível no momento.');
                 }
 
-                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-                const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-                if (!response.ok) throw new Error(`API error: ${response.statusText}`);
                 const result = await response.json();
-                
-                if (result.candidates && result.candidates.length > 0) {
-                    const text = result.candidates[0].content.parts[0].text;
-                    // CORREÇÃO: Função para converter Markdown para HTML
-                    function markdownToHtml(mdText) {
-                        const lines = mdText.split('\n');
-                        let html = '';
-                        let inList = false;
-
-                        for (const line of lines) {
-                            let trimmedLine = line.trim();
-                            
-                            // Pula linhas vazias
-                            if (!trimmedLine) continue;
-                            
-                            // Processa a linha para negrito
-                            let processedLine = trimmedLine.replace(/\*\*(.*?)\*\*/g, '<strong class="text-cyan-300">$1</strong>');
-
-                            // Verifica se é um item de lista
-                            if (trimmedLine.startsWith('* ') || trimmedLine.startsWith('- ')) {
-                                if (!inList) {
-                                    html += '<ul class="space-y-2">';
-                                    inList = true;
-                                }
-                                html += `<li class="ml-5 list-disc">${processedLine.substring(2)}</li>`;
-                            } else {
-                                if (inList) {
-                                    html += '</ul>';
-                                    inList = false;
-                                }
-                                html += `<p class="mb-3">${processedLine}</p>`;
-                            }
-                        }
-
-                        if (inList) {
-                            html += '</ul>';
-                        }
-                        return html;
-                    }
-
-                    const htmlContent = markdownToHtml(text);
-                    outputDiv.innerHTML = `<div class="p-4 bg-gray-900/70 border-l-4 border-cyan-400 rounded-r-lg text-gray-300 leading-relaxed">${htmlContent}</div>`;
-
-                } else {
-                    throw new Error("Não foi possível gerar a análise. Resposta inválida da API.");
+                if (typeof result.text !== 'string' || !result.text.trim()) {
+                    throw new Error('O serviço retornou uma resposta vazia ou inválida.');
                 }
-            } catch (err) {
-                outputDiv.innerHTML = `<div class="p-4 bg-red-900/50 text-red-300 border border-red-500 rounded-lg"><strong>Erro:</strong> ${err.message}</div>`;
+
+                // Renderizar como texto puro evita interpretar HTML retornado pelo modelo.
+                const answer = document.createElement('pre');
+                answer.className = 'whitespace-pre-wrap p-4 bg-gray-900/70 border-l-4 border-cyan-400 rounded-r-lg text-gray-300 leading-relaxed';
+                answer.textContent = result.text;
+                outputDiv.replaceChildren(answer);
+            } catch (error) {
+                outputDiv.textContent = error instanceof Error
+                    ? error.message
+                    : 'Não foi possível gerar a resposta.';
             } finally {
                 button.disabled = false;
-                button.innerHTML = `✨ <span class="ml-2">${buttonText}</span>`;
+                button.textContent = `✨ ${buttonText}`;
             }
         });
     }
